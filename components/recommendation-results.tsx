@@ -1,11 +1,13 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Star, MapPin, Clock, Phone, Globe, Heart, X, DollarSign, Utensils } from "lucide-react"
 import type { Restaurant, SearchSummary } from "@/hooks/use-ai-recommendations"
 import { usePreferences } from "@/hooks/use-preferences"
+import RestaurantDetailModal from "./restaurant-detail-modal"
 
 interface RecommendationResultsProps {
   recommendations: Restaurant[]
@@ -21,6 +23,14 @@ export default function RecommendationResults({
   onRestaurantClick,
 }: RecommendationResultsProps) {
   const { toggleFavorite, rejectSuggestion, behavior } = usePreferences()
+  const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null)
+  const [showDetailModal, setShowDetailModal] = useState(false)
+
+  const handleRestaurantClick = (restaurant: Restaurant) => {
+    setSelectedRestaurant(restaurant)
+    setShowDetailModal(true)
+    onRestaurantClick(restaurant)
+  }
 
   if (recommendations.length === 0) {
     return null
@@ -30,7 +40,7 @@ export default function RecommendationResults({
     <div className="space-y-6">
       {/* Search Summary */}
       {searchSummary && (
-        <Card className="glass-effect border-white/20">
+        <Card className="glass-effect border-white/30">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-foreground">
@@ -44,15 +54,15 @@ export default function RecommendationResults({
 
             <div className="flex flex-wrap gap-2 mb-4">
               {searchSummary.topCuisines.map((cuisine) => (
-                <Badge key={cuisine} variant="outline" className="border-white/20 text-muted-foreground">
+                <Badge key={cuisine} variant="outline" className="border-white/30 text-foreground bg-white/10">
                   {cuisine}
                 </Badge>
               ))}
             </div>
 
             {personalizationExplanation && (
-              <div className="bg-primary/10 rounded-lg p-4 border border-primary/20">
-                <p className="text-sm text-foreground leading-relaxed">
+              <div className="bg-primary/20 rounded-lg p-4 border border-primary/30">
+                <p className="text-sm text-foreground leading-relaxed font-medium">
                   <strong className="text-primary">Personalized for you:</strong> {personalizationExplanation}
                 </p>
               </div>
@@ -66,8 +76,8 @@ export default function RecommendationResults({
         {recommendations.map((restaurant, index) => (
           <Card
             key={restaurant.id}
-            className="glass-effect border-white/20 hover:bg-white/5 transition-all cursor-pointer"
-            onClick={() => onRestaurantClick(restaurant)}
+            className="glass-effect border-white/30 hover:bg-white/10 transition-all cursor-pointer"
+            onClick={() => handleRestaurantClick(restaurant)}
           >
             <CardContent className="p-6">
               <div className="flex items-start justify-between mb-4">
@@ -108,14 +118,18 @@ export default function RecommendationResults({
                   <p className="text-foreground mb-4 leading-relaxed">{restaurant.description}</p>
 
                   {/* Match Score and Reasons */}
-                  <div className="bg-primary/10 rounded-lg p-3 mb-4 border border-primary/20">
+                  <div className="bg-primary/20 rounded-lg p-3 mb-4 border border-primary/30">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-primary">Match Score</span>
                       <span className="text-lg font-bold text-primary">{restaurant.matchScore}%</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {restaurant.matchReasons.map((reason, idx) => (
-                        <Badge key={idx} variant="outline" className="text-xs border-primary/30 text-primary">
+                        <Badge
+                          key={idx}
+                          variant="outline"
+                          className="text-xs border-primary/40 text-primary bg-primary/10"
+                        >
                           {reason}
                         </Badge>
                       ))}
@@ -133,7 +147,11 @@ export default function RecommendationResults({
                     {restaurant.dietaryOptions.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {restaurant.dietaryOptions.map((option) => (
-                          <Badge key={option} variant="secondary" className="text-xs">
+                          <Badge
+                            key={option}
+                            variant="secondary"
+                            className="text-xs bg-secondary/80 text-secondary-foreground"
+                          >
                             {option}
                           </Badge>
                         ))}
@@ -160,6 +178,10 @@ export default function RecommendationResults({
                       </span>
                     )}
                   </div>
+
+                  <div className="mt-3 text-xs text-primary/80 font-medium">
+                    Click to view detailed review analysis →
+                  </div>
                 </div>
 
                 {/* Action Buttons */}
@@ -167,7 +189,7 @@ export default function RecommendationResults({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="glass-effect border-white/20 bg-transparent"
+                    className="glass-effect border-white/30 bg-transparent hover:bg-white/20"
                     onClick={(e) => {
                       e.stopPropagation()
                       toggleFavorite(restaurant.id)
@@ -184,7 +206,7 @@ export default function RecommendationResults({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="glass-effect border-white/20 text-muted-foreground hover:text-red-400 bg-transparent"
+                    className="glass-effect border-white/30 text-muted-foreground hover:text-red-400 bg-transparent hover:bg-white/20"
                     onClick={(e) => {
                       e.stopPropagation()
                       rejectSuggestion(restaurant.id)
@@ -198,6 +220,9 @@ export default function RecommendationResults({
           </Card>
         ))}
       </div>
+
+      {/* Restaurant Detail Modal with Review Analysis */}
+      <RestaurantDetailModal restaurant={selectedRestaurant} open={showDetailModal} onOpenChange={setShowDetailModal} />
     </div>
   )
 }

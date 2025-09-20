@@ -63,14 +63,14 @@ export default function LocationSelector({ onLocationSelect, currentLocation, cl
       {!isExpanded ? (
         <Button
           variant="outline"
-          className="glass-effect border-white/20 text-foreground hover:bg-white/10 w-full justify-start bg-transparent"
+          className="glass-effect border-white/30 text-foreground hover:bg-white/20 w-full justify-start bg-transparent"
           onClick={() => setIsExpanded(true)}
         >
           <MapPin className="w-4 h-4 mr-2" />
           {currentLocation ? formatLocation(currentLocation) : "Set location"}
         </Button>
       ) : (
-        <Card className="glass-effect border-white/20">
+        <Card className="glass-effect border-white/30">
           <CardContent className="p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-foreground">Choose Location</h3>
@@ -87,7 +87,7 @@ export default function LocationSelector({ onLocationSelect, currentLocation, cl
             {/* Current Location Button */}
             <Button
               variant="outline"
-              className="w-full justify-start glass-effect border-white/20 bg-transparent"
+              className="w-full justify-start glass-effect border-white/30 bg-transparent hover:bg-white/20"
               onClick={handleCurrentLocation}
               disabled={isLoading}
             >
@@ -97,7 +97,7 @@ export default function LocationSelector({ onLocationSelect, currentLocation, cl
 
             {/* Location Permission Error */}
             {error && (
-              <div className="text-sm text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20">
+              <div className="text-sm text-red-300 bg-red-500/20 p-2 rounded border border-red-500/30 font-medium">
                 {error.message}
               </div>
             )}
@@ -111,7 +111,7 @@ export default function LocationSelector({ onLocationSelect, currentLocation, cl
                     placeholder="Search city or address..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 bg-background/50 border-white/20 text-foreground"
+                    className="pl-10 bg-background/70 border-white/30 text-foreground"
                     onKeyPress={(e) => e.key === "Enter" && handleSearchLocation()}
                   />
                 </div>
@@ -133,7 +133,7 @@ export default function LocationSelector({ onLocationSelect, currentLocation, cl
                   <Badge
                     key={loc.name}
                     variant="outline"
-                    className="cursor-pointer border-white/20 text-muted-foreground hover:bg-white/10 transition-colors"
+                    className="cursor-pointer border-white/30 text-foreground hover:bg-white/20 transition-colors bg-white/5"
                     onClick={() => handleQuickLocation(loc.name, loc.coords)}
                   >
                     {loc.name}

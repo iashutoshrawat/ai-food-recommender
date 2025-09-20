@@ -112,7 +112,7 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto glass-effect border-white/20">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto glass-effect border-white/30">
         <DialogHeader>
           <DialogTitle className="text-2xl font-playfair text-foreground">
             Tell us about your taste preferences
@@ -128,10 +128,10 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
                 <Badge
                   key={cuisine}
                   variant={preferences.cuisines.includes(cuisine) ? "default" : "outline"}
-                  className={`cursor-pointer p-3 text-center justify-center transition-all ${
+                  className={`cursor-pointer p-3 text-center justify-center transition-all font-medium ${
                     preferences.cuisines.includes(cuisine)
                       ? "bg-primary text-primary-foreground"
-                      : "bg-transparent border-white/20 text-muted-foreground hover:bg-white/10"
+                      : "bg-transparent border-white/30 text-foreground hover:bg-white/20"
                   }`}
                   onClick={() =>
                     setPreferences((prev) => ({
@@ -146,7 +146,7 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
             </div>
           </div>
 
-          <Separator className="bg-white/10" />
+          <Separator className="bg-white/20" />
 
           {/* Spice Level */}
           <div>
@@ -173,7 +173,7 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
             </div>
           </div>
 
-          <Separator className="bg-white/10" />
+          <Separator className="bg-white/20" />
 
           {/* Dietary Restrictions */}
           <div>
@@ -201,7 +201,7 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
                       }
                     }}
                   />
-                  <Label htmlFor={diet} className="text-foreground cursor-pointer">
+                  <Label htmlFor={diet} className="text-foreground cursor-pointer font-medium">
                     {diet}
                   </Label>
                 </div>
@@ -209,7 +209,7 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
             </div>
           </div>
 
-          <Separator className="bg-white/10" />
+          <Separator className="bg-white/20" />
 
           {/* Price Range */}
           <div>
@@ -236,7 +236,7 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
             </div>
           </div>
 
-          <Separator className="bg-white/10" />
+          <Separator className="bg-white/20" />
 
           {/* Meal Timing */}
           <div>
@@ -249,10 +249,10 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
                 <Badge
                   key={timing}
                   variant={preferences.mealTiming.includes(timing) ? "default" : "outline"}
-                  className={`cursor-pointer p-3 text-center justify-center transition-all ${
+                  className={`cursor-pointer p-3 text-center justify-center transition-all font-medium ${
                     preferences.mealTiming.includes(timing)
                       ? "bg-primary text-primary-foreground"
-                      : "bg-transparent border-white/20 text-muted-foreground hover:bg-white/10"
+                      : "bg-transparent border-white/30 text-foreground hover:bg-white/20"
                   }`}
                   onClick={() =>
                     setPreferences((prev) => ({
@@ -267,7 +267,7 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
             </div>
           </div>
 
-          <Separator className="bg-white/10" />
+          <Separator className="bg-white/20" />
 
           {/* Dining Style */}
           <div>
@@ -280,10 +280,10 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
                 <Badge
                   key={style}
                   variant={preferences.diningStyle.includes(style) ? "default" : "outline"}
-                  className={`cursor-pointer p-3 text-center justify-center transition-all ${
+                  className={`cursor-pointer p-3 text-center justify-center transition-all font-medium ${
                     preferences.diningStyle.includes(style)
                       ? "bg-primary text-primary-foreground"
-                      : "bg-transparent border-white/20 text-muted-foreground hover:bg-white/10"
+                      : "bg-transparent border-white/30 text-foreground hover:bg-white/20"
                   }`}
                   onClick={() =>
                     setPreferences((prev) => ({
@@ -298,7 +298,7 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
             </div>
           </div>
 
-          <Separator className="bg-white/10" />
+          <Separator className="bg-white/20" />
 
           {/* Favorite Ingredients */}
           <div className="grid md:grid-cols-2 gap-6">
@@ -312,10 +312,10 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
                   <Badge
                     key={ingredient}
                     variant={preferences.favoriteIngredients.includes(ingredient) ? "default" : "outline"}
-                    className={`cursor-pointer p-2 text-center justify-center transition-all text-xs ${
+                    className={`cursor-pointer p-2 text-center justify-center transition-all text-xs font-medium ${
                       preferences.favoriteIngredients.includes(ingredient)
                         ? "bg-green-600 text-white"
-                        : "bg-transparent border-white/20 text-muted-foreground hover:bg-white/10"
+                        : "bg-transparent border-white/30 text-foreground hover:bg-white/20"
                     }`}
                     onClick={() =>
                       setPreferences((prev) => ({
@@ -338,10 +338,10 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
                   <Badge
                     key={ingredient}
                     variant={preferences.dislikedIngredients.includes(ingredient) ? "default" : "outline"}
-                    className={`cursor-pointer p-2 text-center justify-center transition-all text-xs ${
+                    className={`cursor-pointer p-2 text-center justify-center transition-all text-xs font-medium ${
                       preferences.dislikedIngredients.includes(ingredient)
                         ? "bg-red-600 text-white"
-                        : "bg-transparent border-white/20 text-muted-foreground hover:bg-white/10"
+                        : "bg-transparent border-white/30 text-foreground hover:bg-white/20"
                     }`}
                     onClick={() =>
                       setPreferences((prev) => ({
@@ -359,11 +359,11 @@ export default function PreferenceModal({ open, onOpenChange, onSave, initialPre
           </div>
         </div>
 
-        <div className="flex justify-end gap-4 pt-6 border-t border-white/10">
+        <div className="flex justify-end gap-4 pt-6 border-t border-white/20">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="glass-effect border-white/20 text-foreground hover:bg-white/10"
+            className="glass-effect border-white/30 text-foreground hover:bg-white/20"
           >
             Cancel
           </Button>
