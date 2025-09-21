@@ -38,7 +38,7 @@ const restaurantRecommendationSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    const { query, preferences, location, behavior } = await req.json()
+    const { query, preferences, location, behavior, realRestaurants } = await req.json()
 
     // Build context for AI recommendation
     const userContext = {
@@ -61,7 +61,66 @@ export async function POST(req: Request) {
       location: location || "Current location",
     }
 
-    const prompt = `You are an expert restaurant recommendation AI. Based on the user's query "${query}" and their detailed preferences, generate personalized restaurant recommendations.
+    // Determine if we have real restaurant data to work with
+    const hasRealData = realRestaurants && Array.isArray(realRestaurants) && realRestaurants.length > 0
+
+    let prompt: string
+
+    if (hasRealData) {
+      // Enhanced prompt for real restaurant data analysis
+      const restaurantData = realRestaurants.slice(0, 12) // Limit to prevent token overflow
+      
+      prompt = `You are an expert restaurant recommendation AI. Based on the user's query "${query}" and their detailed preferences, analyze and rank these REAL restaurants, then enhance with additional personalized recommendations.
+
+REAL RESTAURANTS FOUND:
+${restaurantData.map((r, i) => `
+${i + 1}. ${r.name}
+   - Cuisine: ${r.cuisine}
+   - Address: ${r.address}
+   - Price Level: ${"$".repeat(r.priceLevel || 3)}
+   - Rating: ${r.rating || "N/A"}/5 (${r.reviewCount || 0} reviews)
+   - Specialties: ${(r.specialties || []).join(", ")}
+   - Dietary Options: ${(r.dietaryOptions || []).join(", ")}
+   - Distance: ${r.distance || "Unknown"}
+   - Description: ${r.description || ""}
+`).join("")}
+
+User Preferences:
+- Favorite Cuisines: ${userContext.preferences.cuisines.join(", ") || "No specific preference"}
+- Spice Tolerance: ${userContext.preferences.spiceLevel}/5
+- Dietary Restrictions: ${userContext.preferences.dietaryRestrictions.join(", ") || "None"}
+- Price Range: ${"$".repeat(userContext.preferences.priceRange[0])} to ${"$".repeat(userContext.preferences.priceRange[1])}
+- Dining Style: ${userContext.preferences.diningStyle.join(", ") || "Any"}
+- Meal Timing: ${userContext.preferences.mealTiming.join(", ") || "Any time"}
+- Loves: ${userContext.preferences.favoriteIngredients.join(", ") || "No specific preferences"}
+- Avoids: ${userContext.preferences.dislikedIngredients.join(", ") || "Nothing specific"}
+
+User Behavior:
+- Recent Searches: ${userContext.behavior.searchHistory.join(", ") || "None"}
+- Favorite Restaurants: ${userContext.behavior.favoriteRestaurants.length} saved
+- Previously Rejected: ${userContext.behavior.rejectedSuggestions.length} restaurants
+
+Location Context: ${userContext.location}
+
+TASK: Analyze these real restaurants and create personalized recommendations:
+
+1. **Rank the real restaurants** based on how well they match the user's preferences
+2. **Calculate match scores (0-100)** based on:
+   - Cuisine preference alignment
+   - Price range fit
+   - Dietary restriction accommodation
+   - Distance and convenience
+   - Rating and review quality
+   - Specialty dish alignment with user's favorite ingredients
+3. **Provide specific match reasons** for each restaurant
+4. **Enhance missing data** reasonably (like estimated wait times, ambiance)
+5. **Include 2-3 additional restaurants** if the real data doesn't provide enough variety
+
+Focus on authentic analysis of the real restaurant data while personalizing based on user preferences. Prioritize restaurants that genuinely match dietary restrictions and cuisine preferences.`
+
+    } else {
+      // Fallback prompt for when no real data is available (original behavior)
+      prompt = `You are an expert restaurant recommendation AI. Based on the user's query "${query}" and their detailed preferences, generate personalized restaurant recommendations.
 
 User Preferences:
 - Favorite Cuisines: ${userContext.preferences.cuisines.join(", ") || "No specific preference"}
@@ -81,7 +140,7 @@ User Behavior:
 Location: ${userContext.location}
 
 Generate 6-8 diverse restaurant recommendations that match the user's query and preferences. Each recommendation should:
-1. Have a realistic name and details
+1. Have a realistic name and details based on the location
 2. Match the user's dietary restrictions and preferences
 3. Fall within their preferred price range
 4. Include a match score (0-100) based on how well it fits their profile
@@ -89,16 +148,30 @@ Generate 6-8 diverse restaurant recommendations that match the user's query and 
 6. Include practical details like estimated wait time and distance
 
 Make the recommendations feel authentic and varied, covering different aspects of their preferences. If they have strong preferences (like specific cuisines or dietary restrictions), prioritize those heavily in the match scoring.`
+    }
 
     const { object } = await generateObject({
       model: openai("gpt-4o"),
       schema: restaurantRecommendationSchema,
       prompt,
-      maxOutputTokens: 3000,
-      temperature: 0.7,
+      maxOutputTokens: hasRealData ? 4000 : 3000, // More tokens for real data analysis
+      temperature: hasRealData ? 0.5 : 0.7, // Lower temperature for real data analysis
     })
 
-    return Response.json(object)
+    // Enhance the response with metadata about data source
+    const enhancedResponse = {
+      ...object,
+      searchSummary: {
+        ...object.searchSummary,
+        dataSource: hasRealData ? 'real_and_ai_enhanced' : 'ai_generated',
+        realRestaurantsAnalyzed: hasRealData ? realRestaurants.length : 0,
+        enhancementNote: hasRealData 
+          ? 'Recommendations based on real restaurant data, enhanced with AI analysis and personalization.'
+          : 'Recommendations generated using AI based on your preferences and location.'
+      }
+    }
+
+    return Response.json(enhancedResponse)
   } catch (error) {
     console.error("Recommendation error:", error)
     return Response.json({ error: "Failed to generate recommendations" }, { status: 500 })

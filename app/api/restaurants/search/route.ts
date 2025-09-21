@@ -1,19 +1,174 @@
+import { openAISearchService } from "@/lib/openai-search-service"
+import { SearchResultParser } from "@/lib/search-result-parser"
+import { RestaurantValidator } from "@/lib/restaurant-validator"
+import { SearchCache } from "@/lib/search-cache"
+import { SearchQueryBuilder } from "@/lib/search-query-builder"
+import { RestaurantSearchErrorHandler } from "@/lib/error-handling"
+import type { LocationData } from "@/hooks/use-location"
+
+// Initialize search cache
+const searchCache = new SearchCache({
+  ttl: 30 * 60 * 1000, // 30 minutes
+  maxSize: 100
+})
+
 export async function POST(req: Request) {
   try {
-    const { query, location, radius = 5, priceRange, cuisine, dietaryRestrictions } = await req.json()
+    const { query, location, radius = 10, priceRange, cuisine, dietaryRestrictions, maxResults = 8 } = await req.json()
 
-    // In a real app, you would integrate with restaurant APIs like:
-    // - Google Places API
-    // - Yelp Fusion API
-    // - Foursquare Places API
-    // - Zomato API
+    // Validate required parameters
+    if (!location || (!location.latitude && !location.longitude)) {
+      return Response.json({ error: "Location data is required" }, { status: 400 })
+    }
 
-    // For this demo, we'll generate realistic restaurant data based on the search parameters
-    const mockRestaurants = generateMockRestaurants(query, location, radius, priceRange, cuisine, dietaryRestrictions)
+    // Generate cache key
+    const cacheKey = SearchCache.generateCacheKey({
+      query: query || '',
+      location,
+      radius,
+      priceRange,
+      cuisine,
+      dietaryRestrictions
+    })
 
-    return Response.json({
-      restaurants: mockRestaurants,
-      totalResults: mockRestaurants.length,
+    // Check cache first
+    const cachedResult = searchCache.get(cacheKey)
+    if (cachedResult) {
+      console.log(`Cache hit for query: "${query}"`)
+      return Response.json({
+        ...cachedResult,
+        cached: true,
+        searchParams: { query, location, radius, priceRange, cuisine, dietaryRestrictions }
+      })
+    }
+
+    console.log(`Performing web search for: "${query}" in ${location.city || 'location'}`)
+
+    // Build search context for query optimization
+    const searchContext = {
+      userQuery: query || '',
+      location,
+      cuisine,
+      dietaryRestrictions,
+      priceRange,
+    }
+
+    // Validate search context
+    const contextValidation = SearchQueryBuilder.validateSearchContext(searchContext)
+    if (!contextValidation.isValid) {
+      console.warn('Search context validation issues:', contextValidation.issues)
+    }
+
+    let restaurants: any[] = []
+    let searchMetadata: any = null
+    let usedFallback = false
+
+    try {
+      // Primary search using OpenAI web search
+      const searchResult = await openAISearchService.searchRestaurants({
+        query: query || '',
+        location,
+        radius,
+        priceRange,
+        cuisine,
+        dietaryRestrictions,
+        maxResults
+      })
+
+      restaurants = searchResult.restaurants
+      searchMetadata = searchResult.searchMetadata
+
+      console.log(`OpenAI search returned ${restaurants.length} results`)
+
+    } catch (searchError) {
+      console.error("OpenAI search failed:", searchError)
+      
+      // Handle error with comprehensive error handling system
+      const errorHandling = RestaurantSearchErrorHandler.handleSearchError(
+        searchError,
+        {
+          query: query || '',
+          location,
+          attempt: 0
+        },
+        {
+          enableFallback: true,
+          maxRetries: 1,
+          retryDelay: 1000,
+          fallbackQuality: 'medium'
+        }
+      )
+
+      console.log(`Error handling strategy: ${errorHandling.fallbackStrategy}`)
+      console.log(`User message: ${errorHandling.userMessage}`)
+      
+      // Generate fallback restaurants using enhanced error handler
+      if (errorHandling.fallbackStrategy !== 'none') {
+        restaurants = RestaurantSearchErrorHandler.generateFallbackRestaurants(
+          query || '',
+          location,
+          'medium'
+        )
+        usedFallback = true
+        
+        searchMetadata = {
+          query: query || 'restaurants',
+          location: location.city || `${location.latitude}, ${location.longitude}`,
+          totalFound: restaurants.length,
+          searchTimestamp: new Date().toISOString(),
+          confidence: 0.6, // Lower confidence for fallback data
+          errorInfo: {
+            type: errorHandling.searchError.type,
+            message: errorHandling.userMessage,
+            fallbackStrategy: errorHandling.fallbackStrategy
+          }
+        }
+      } else {
+        // No fallback available, return error
+        const userError = RestaurantSearchErrorHandler.createUserFriendlyError(
+          errorHandling.searchError.type,
+          searchError
+        )
+        
+        return Response.json({
+          error: userError.message,
+          suggestions: userError.suggestions,
+          canRetry: userError.canRetry,
+          searchParams: { query, location, radius, priceRange, cuisine, dietaryRestrictions }
+        }, { status: 503 })
+      }
+    }
+
+    // Parse and validate results
+    const parseResult = SearchResultParser.parseRestaurants(
+      restaurants,
+      location,
+      query || ''
+    )
+
+    // Validate restaurants
+    const validationResult = RestaurantValidator.validateRestaurantList(
+      parseResult.valid,
+      location,
+      query
+    )
+
+    // Use only high-quality results
+    const finalRestaurants = validationResult.valid
+      .filter(result => result.validation.score >= 60) // Quality threshold
+      .map(result => result.restaurant)
+      .slice(0, maxResults)
+
+    // Prepare response
+    const response = {
+      restaurants: finalRestaurants,
+      totalResults: finalRestaurants.length,
+      searchMetadata: {
+        ...searchMetadata,
+        usedFallback,
+        qualityStats: parseResult.stats,
+        validationStats: validationResult.statistics
+      },
       searchParams: {
         query,
         location,
@@ -22,10 +177,33 @@ export async function POST(req: Request) {
         cuisine,
         dietaryRestrictions,
       },
-    })
+      cached: false
+    }
+
+    // Cache successful results (only if not fallback and has results)
+    if (!usedFallback && finalRestaurants.length > 0) {
+      searchCache.set(cacheKey, {
+        restaurants: finalRestaurants,
+        searchMetadata: response.searchMetadata
+      }, {
+        location,
+        query: query || '',
+        resultCount: finalRestaurants.length
+      })
+    }
+
+    console.log(`Returning ${finalRestaurants.length} validated restaurants`)
+    return Response.json(response)
+
   } catch (error) {
     console.error("Restaurant search error:", error)
-    return Response.json({ error: "Failed to search restaurants" }, { status: 500 })
+    
+    // Return error with fallback suggestion
+    return Response.json({ 
+      error: "Failed to search restaurants",
+      fallback: "Please try a different location or search term",
+      details: error instanceof Error ? error.message : "Unknown error"
+    }, { status: 500 })
   }
 }
 

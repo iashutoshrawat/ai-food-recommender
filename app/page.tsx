@@ -10,6 +10,7 @@ import LocationSelector from "@/components/location-selector"
 import { usePreferences } from "@/hooks/use-preferences"
 import { useAIRecommendations, type Restaurant } from "@/hooks/use-ai-recommendations"
 import type { LocationData } from "@/hooks/use-location"
+import { useLocationPersistence } from "@/hooks/use-location-persistence"
 import { useRouter } from "next/navigation"
 
 const foodVideos = [
@@ -17,7 +18,7 @@ const foodVideos = [
     id: "pizza",
     title: "Pizza Cheese Pull",
     description: "Melted mozzarella stretching from a perfect slice",
-    placeholder: "/close-up-pizza-cheese-pull-melted-mozzarella-st.jpg",
+    placeholder: "/close-up-pizza-cheese-pull-melted-mozzarella-stret.jpg",
   },
   {
     id: "cake",
@@ -37,7 +38,7 @@ export default function HomePage() {
   const [currentVideo, setCurrentVideo] = useState(0)
   const [searchQuery, setSearchQuery] = useState("")
   const [showPreferences, setShowPreferences] = useState(false)
-  const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null)
+  const { selectedLocation, setSelectedLocation, locationToUrlParams } = useLocationPersistence()
   const router = useRouter()
 
   const { preferences, behavior, isLoading, savePreferences, trackRestaurantClick } = usePreferences()
@@ -68,7 +69,14 @@ export default function HomePage() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
-    router.push(`/search?q=${encodeURIComponent(searchQuery)}`)
+    
+    const params = new URLSearchParams({ q: searchQuery })
+    if (selectedLocation) {
+      const locationParams = locationToUrlParams(selectedLocation)
+      locationParams.forEach((value, key) => params.set(key, value))
+    }
+    
+    router.push(`/search?${params.toString()}`)
   }
 
   const handlePreferencesSave = (newPreferences: any) => {

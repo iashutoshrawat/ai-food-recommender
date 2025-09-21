@@ -85,7 +85,8 @@ export function useLocation() {
       const response = await fetch(`/api/geocode?address=${encodeURIComponent(address)}`)
 
       if (!response.ok) {
-        throw new Error("Failed to geocode address")
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || "Failed to geocode address")
       }
 
       const locationData = await response.json()
@@ -99,6 +100,61 @@ export function useLocation() {
       return null
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Get address suggestions for autocomplete (new function)
+  const getAddressSuggestions = async (query: string): Promise<LocationData[]> => {
+    if (!query.trim() || query.length < 3) return []
+
+    try {
+      const response = await fetch(`/api/geocode?address=${encodeURIComponent(query)}`)
+      
+      if (!response.ok) {
+        return []
+      }
+
+      const result = await response.json()
+      
+      // If single result, return as array
+      if (result.latitude && result.longitude) {
+        return [result]
+      }
+      
+      // If multiple results, return as is
+      if (Array.isArray(result)) {
+        return result
+      }
+      
+      return []
+    } catch (error) {
+      console.warn("Failed to get address suggestions:", error)
+      return []
+    }
+  }
+
+  // Search for nearby places (new function)
+  const searchNearbyPlaces = async (
+    lat: number, 
+    lng: number, 
+    category?: string
+  ): Promise<LocationData[]> => {
+    try {
+      // For now, use the geocoding API with nearby search
+      // This could be enhanced with a dedicated places API endpoint
+      const response = await fetch(
+        `/api/geocode?address=restaurants near ${lat},${lng}`
+      )
+      
+      if (!response.ok) {
+        return []
+      }
+
+      const result = await response.json()
+      return Array.isArray(result) ? result : [result]
+    } catch (error) {
+      console.warn("Failed to search nearby places:", error)
+      return []
     }
   }
 
@@ -137,6 +193,8 @@ export function useLocation() {
     isSupported,
     getCurrentLocation,
     searchLocation,
+    getAddressSuggestions,
+    searchNearbyPlaces,
     clearLocation,
     formatLocation,
     calculateDistance,

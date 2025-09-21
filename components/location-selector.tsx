@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -17,9 +17,24 @@ interface LocationSelectorProps {
 export default function LocationSelector({ onLocationSelect, currentLocation, className }: LocationSelectorProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [isExpanded, setIsExpanded] = useState(false)
+  const [suggestions, setSuggestions] = useState<LocationData[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const { location, isLoading, error, hasPermission, getCurrentLocation, searchLocation, formatLocation } =
     useLocation()
+
+  // Validate and format the current location
+  const getDisplayLocation = (loc: LocationData | null | undefined): string => {
+    if (!loc) return "Set location"
+    try {
+      return formatLocation(loc)
+    } catch (error) {
+      console.warn("Error formatting location:", error)
+      return "Set location"
+    }
+  }
 
   const handleCurrentLocation = async () => {
     const loc = await getCurrentLocation()
@@ -50,12 +65,65 @@ export default function LocationSelector({ onLocationSelect, currentLocation, cl
     setIsExpanded(false)
   }
 
+  // Debounced autocomplete search
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+
+    if (searchQuery.trim().length < 2) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      await fetchSuggestions(searchQuery)
+    }, 300) // 300ms debounce
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [searchQuery])
+
+  const fetchSuggestions = async (query: string) => {
+    if (!query.trim()) return
+
+    setSuggestionLoading(true)
+    try {
+      const response = await fetch(`/api/autocomplete?q=${encodeURIComponent(query)}&limit=5`)
+      if (response.ok) {
+        const data = await response.json()
+        setSuggestions(data.results || [])
+        setShowSuggestions(true)
+      }
+    } catch (error) {
+      console.error('Error fetching suggestions:', error)
+    } finally {
+      setSuggestionLoading(false)
+    }
+  }
+
+  const handleSuggestionSelect = (suggestion: LocationData) => {
+    onLocationSelect(suggestion)
+    setSearchQuery("")
+    setSuggestions([])
+    setShowSuggestions(false)
+    setIsExpanded(false)
+  }
+
   const quickLocations = [
+    // International cities prioritized
+    { name: "Delhi, India", coords: { latitude: 28.7041, longitude: 77.1025 } },
+    { name: "Mumbai, India", coords: { latitude: 19.0760, longitude: 72.8777 } },
+    { name: "London, UK", coords: { latitude: 51.5074, longitude: -0.1278 } },
+    { name: "Paris, France", coords: { latitude: 48.8566, longitude: 2.3522 } },
+    { name: "Tokyo, Japan", coords: { latitude: 35.6762, longitude: 139.6503 } },
     { name: "New York, NY", coords: { latitude: 40.7128, longitude: -74.006 } },
     { name: "Los Angeles, CA", coords: { latitude: 34.0522, longitude: -118.2437 } },
-    { name: "Chicago, IL", coords: { latitude: 41.8781, longitude: -87.6298 } },
-    { name: "San Francisco, CA", coords: { latitude: 37.7749, longitude: -122.4194 } },
-    { name: "Miami, FL", coords: { latitude: 25.7617, longitude: -80.1918 } },
+    { name: "Singapore", coords: { latitude: 1.3521, longitude: 103.8198 } },
   ]
 
   return (
@@ -67,7 +135,7 @@ export default function LocationSelector({ onLocationSelect, currentLocation, cl
           onClick={() => setIsExpanded(true)}
         >
           <MapPin className="w-4 h-4 mr-2" />
-          {currentLocation ? formatLocation(currentLocation) : "Set location"}
+          {getDisplayLocation(currentLocation)}
         </Button>
       ) : (
         <Card className="glass-effect border-white/30">
@@ -113,7 +181,36 @@ export default function LocationSelector({ onLocationSelect, currentLocation, cl
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10 bg-background/70 border-white/30 text-foreground"
                     onKeyPress={(e) => e.key === "Enter" && handleSearchLocation()}
+                    onFocus={() => searchQuery.trim().length >= 2 && setShowSuggestions(true)}
+                    onBlur={() => {
+                      // Delay hiding suggestions to allow clicking
+                      setTimeout(() => setShowSuggestions(false), 150)
+                    }}
                   />
+                  {suggestionLoading && (
+                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+                  )}
+                  
+                  {/* Autocomplete Suggestions */}
+                  {showSuggestions && suggestions.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-background/95 border border-white/30 rounded-md shadow-lg max-h-48 overflow-y-auto backdrop-blur-sm">
+                      {suggestions.map((suggestion, index) => (
+                        <div
+                          key={`${suggestion.latitude}-${suggestion.longitude}-${index}`}
+                          className="px-3 py-2 cursor-pointer hover:bg-white/10 text-foreground text-sm border-b border-white/10 last:border-b-0"
+                          onClick={() => handleSuggestionSelect(suggestion)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                            <div>
+                              <div className="font-medium">{suggestion.city}</div>
+                              <div className="text-xs text-muted-foreground">{suggestion.address}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <Button
                   onClick={handleSearchLocation}

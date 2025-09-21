@@ -4,13 +4,14 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Send, ArrowLeft, MapPin, Settings, Bot, User } from "lucide-react"
+import { Send, ArrowLeft, MapPin, Settings, User, Utensils } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { usePreferences } from "@/hooks/use-preferences"
 import { useAIRecommendations, type Restaurant } from "@/hooks/use-ai-recommendations"
 import LocationSelector from "@/components/location-selector"
 import PreferenceModal from "@/components/preference-modal"
 import type { LocationData } from "@/hooks/use-location"
+import { useLocationPersistence } from "@/hooks/use-location-persistence"
 
 interface ChatMessage {
   id: string
@@ -27,8 +28,9 @@ export default function SearchPage() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [currentMessage, setCurrentMessage] = useState("")
-  const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null)
   const [showPreferences, setShowPreferences] = useState(false)
+  
+  const { selectedLocation, setSelectedLocation, parseLocationFromUrl, isLoaded } = useLocationPersistence()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const { preferences, savePreferences } = usePreferences()
@@ -43,11 +45,21 @@ export default function SearchPage() {
     scrollToBottom()
   }, [messages])
 
+  // Parse location from URL parameters on initial load
   useEffect(() => {
-    if (initialQuery) {
+    if (isLoaded) {
+      const urlLocation = parseLocationFromUrl(searchParams)
+      if (urlLocation) {
+        setSelectedLocation(urlLocation)
+      }
+    }
+  }, [isLoaded, searchParams, parseLocationFromUrl, setSelectedLocation])
+
+  useEffect(() => {
+    if (initialQuery && isLoaded) {
       handleInitialSearch(initialQuery)
     }
-  }, [initialQuery])
+  }, [initialQuery, isLoaded])
 
   useEffect(() => {
     if (recommendations.length > 0 && !isLoading) {
@@ -105,6 +117,21 @@ export default function SearchPage() {
     }
   }
 
+  const handleBackNavigation = () => {
+    try {
+      // Try to go back in browser history first
+      if (typeof window !== "undefined" && window.history.length > 1) {
+        router.back()
+      } else {
+        // Fallback to home page
+        router.push("/")
+      }
+    } catch (error) {
+      console.warn("Navigation error, falling back to home:", error)
+      router.push("/")
+    }
+  }
+
   const handleRestaurantClick = (restaurant: Restaurant) => {
     // Add a message showing interest in this restaurant
     const interestMessage: ChatMessage = {
@@ -133,7 +160,7 @@ export default function SearchPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push("/")}
+              onClick={handleBackNavigation}
               className="text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -166,7 +193,7 @@ export default function SearchPage() {
         <div className="max-w-4xl mx-auto space-y-6">
           {messages.length === 0 && (
             <div className="text-center py-12">
-              <Bot className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <Utensils className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
               <h2 className="text-xl font-semibold text-foreground mb-2">Let's find your perfect restaurant!</h2>
               <p className="text-muted-foreground">
                 Ask me anything about restaurants, cuisines, or dining preferences.
@@ -185,7 +212,7 @@ export default function SearchPage() {
                   {message.type === "user" ? (
                     <User className="w-4 h-4 text-primary-foreground" />
                   ) : (
-                    <Bot className="w-4 h-4 text-muted-foreground" />
+                    <Utensils className="w-4 h-4 text-muted-foreground" />
                   )}
                 </div>
 
@@ -244,7 +271,7 @@ export default function SearchPage() {
           {isLoading && (
             <div className="flex gap-3 justify-start">
               <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                <Bot className="w-4 h-4 text-muted-foreground" />
+                <Utensils className="w-4 h-4 text-muted-foreground" />
               </div>
               <Card className="p-4 bg-muted">
                 <div className="flex items-center gap-2">
