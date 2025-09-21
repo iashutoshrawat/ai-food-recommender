@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Send, ArrowLeft, MapPin, Settings, User, Utensils } from "lucide-react"
+import { Send, ArrowLeft, MapPin, Settings, User, Utensils, MessageSquare } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { usePreferences } from "@/hooks/use-preferences"
 import { useAIRecommendations, type Restaurant } from "@/hooks/use-ai-recommendations"
@@ -19,6 +19,8 @@ interface ChatMessage {
   content: string
   restaurants?: Restaurant[]
   timestamp: Date
+  followUpQuestions?: string[]
+  isProactive?: boolean
 }
 
 export default function SearchPage() {
@@ -29,6 +31,7 @@ export default function SearchPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [currentMessage, setCurrentMessage] = useState("")
   const [showPreferences, setShowPreferences] = useState(false)
+  const [lastActivityTime, setLastActivityTime] = useState(Date.now())
   
   const { selectedLocation, setSelectedLocation, parseLocationFromUrl, isLoaded } = useLocationPersistence()
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -44,6 +47,49 @@ export default function SearchPage() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Proactive suggestions system
+  useEffect(() => {
+    const proactiveTimer = setTimeout(() => {
+      // Only show proactive suggestions if user has restaurants but hasn't asked questions recently
+      if (recommendations.length > 0 && messages.length > 0) {
+        const lastUserMessage = messages.filter(m => m.type === "user").slice(-1)[0]
+        const timeSinceLastMessage = lastUserMessage ? Date.now() - lastUserMessage.timestamp.getTime() : 0
+        
+        // If user hasn't interacted for 30 seconds, offer proactive help
+        if (timeSinceLastMessage > 30000) {
+          addProactiveSuggestion()
+        }
+      }
+    }, 30000) // Check after 30 seconds
+
+    return () => clearTimeout(proactiveTimer)
+  }, [messages, recommendations])
+
+  const addProactiveSuggestion = () => {
+    // Don't add if user is currently typing or if we recently added a proactive message
+    if (currentMessage.trim() || isLoading) return
+    
+    const lastMessage = messages[messages.length - 1]
+    if (lastMessage?.isProactive) return // Don't spam proactive messages
+
+    const proactiveMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: "assistant",
+      content: "👋 I notice you're browsing the restaurants! I'm here to help if you have any questions. I can tell you about food quality, atmosphere, pricing, or help you decide between options.",
+      timestamp: new Date(),
+      followUpQuestions: [
+        "Which restaurant do you recommend?",
+        "What's the atmosphere like at the top-rated place?",
+        "Which is best value for money?",
+        "Help me decide between the top 2",
+        "Which is good for a special occasion?"
+      ],
+      isProactive: true,
+    }
+
+    setMessages(prev => [...prev, proactiveMessage])
+  }
 
   // Parse location from URL parameters on initial load
   useEffect(() => {
@@ -72,7 +118,24 @@ export default function SearchPage() {
         restaurants: recommendations,
         timestamp: new Date(),
       }
-      setMessages((prev) => [...prev, assistantMessage])
+      
+      const followUpMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: "assistant",
+        content: `🎯 **Want to know more?** Click on any restaurant above and I'll research it for you! I can tell you about:
+
+• Food quality and signature dishes
+• Atmosphere and dining experience
+• Pricing and value for money
+• Best occasions to visit
+• Reservation requirements
+• And much more!`,
+        timestamp: new Date(),
+        followUpQuestions: generateContextualFollowUpQuestions(initialQuery, recommendations),
+        isProactive: true,
+      }
+
+      setMessages((prev) => [...prev, assistantMessage, followUpMessage])
     }
   }, [recommendations, isLoading, searchSummary])
 
@@ -98,22 +161,262 @@ export default function SearchPage() {
     }
 
     setMessages((prev) => [...prev, userMessage])
+    const messageToProcess = currentMessage
     setCurrentMessage("")
 
-    // Check if this is a refinement request or new search
-    if (
-      currentMessage.toLowerCase().includes("different") ||
-      currentMessage.toLowerCase().includes("other") ||
-      currentMessage.toLowerCase().includes("more") ||
-      currentMessage.toLowerCase().includes("cheaper") ||
-      currentMessage.toLowerCase().includes("closer")
-    ) {
-      // This is a refinement - use the original query with modifications
-      const refinedQuery = `${initialQuery} but ${currentMessage}`
-      await getRecommendations(refinedQuery, selectedLocation || undefined)
+    // Add thinking message
+    const thinkingMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      type: "assistant", 
+      content: "Let me think about that...",
+      timestamp: new Date(),
+    }
+
+    setMessages((prev) => [...prev, thinkingMessage])
+
+    try {
+      // Check if this is about a specific restaurant mentioned in previous messages
+      const restaurantMentioned = findMentionedRestaurant(messageToProcess, messages)
+      
+      if (restaurantMentioned) {
+        // This is a follow-up question about a specific restaurant
+        await handleRestaurantFollowUp(messageToProcess, restaurantMentioned)
+      } else if (
+        messageToProcess.toLowerCase().includes("different") ||
+        messageToProcess.toLowerCase().includes("other") ||
+        messageToProcess.toLowerCase().includes("more") ||
+        messageToProcess.toLowerCase().includes("cheaper") ||
+        messageToProcess.toLowerCase().includes("closer")
+      ) {
+        // This is a refinement request
+        const refinedQuery = `${initialQuery} but ${messageToProcess}`
+        setMessages((prev) => prev.slice(0, -1)) // Remove thinking message
+        await getRecommendations(refinedQuery, selectedLocation || undefined)
+      } else {
+        // This is a new search or general question
+        setMessages((prev) => prev.slice(0, -1)) // Remove thinking message
+        await getRecommendations(messageToProcess, selectedLocation || undefined)
+      }
+    } catch (error) {
+      console.error('Error processing message:', error)
+      
+      const errorResponse: ChatMessage = {
+        id: (Date.now() + 2).toString(),
+        type: "assistant",
+        content: "I'm having trouble processing your request right now. Could you try rephrasing or asking something else?",
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => {
+        const withoutThinking = prev.slice(0, -1)
+        return [...withoutThinking, errorResponse]
+      })
+    }
+  }
+
+  // Helper function to find if a restaurant is mentioned in the message
+  const findMentionedRestaurant = (message: string, chatHistory: ChatMessage[]): Restaurant | null => {
+    const lowerMessage = message.toLowerCase()
+    
+    // Look through recent messages for restaurants
+    for (const chatMessage of chatHistory.slice(-10).reverse()) {
+      if (chatMessage.restaurants) {
+        for (const restaurant of chatMessage.restaurants) {
+          if (lowerMessage.includes(restaurant.name.toLowerCase()) ||
+              lowerMessage.includes('this restaurant') ||
+              lowerMessage.includes('this place') ||
+              lowerMessage.includes('it ')) {
+            return restaurant
+          }
+        }
+      }
+    }
+    return null
+  }
+
+  // Handle follow-up questions about specific restaurants
+  const handleRestaurantFollowUp = async (question: string, restaurant: Restaurant) => {
+    try {
+      const response = await fetch('/api/restaurant-intelligence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          restaurant,
+          specificQuestion: question,
+          searchContext: initialQuery,
+          userLocation: selectedLocation?.address || selectedLocation?.city,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        
+        const intelligentAnswer: ChatMessage = {
+          id: (Date.now() + 2).toString(),
+          type: "assistant",
+          content: data.intelligence.insights,
+          timestamp: new Date(),
+          followUpQuestions: data.intelligence.followUpQuestions || [],
+        }
+
+        setMessages((prev) => {
+          const withoutThinking = prev.slice(0, -1)
+          return [...withoutThinking, intelligentAnswer]
+        })
+      } else {
+        throw new Error('Failed to get intelligent response')
+      }
+    } catch (error) {
+      // Fallback to basic response
+      const basicResponse: ChatMessage = {
+        id: (Date.now() + 2).toString(),
+        type: "assistant",
+        content: `Regarding ${restaurant.name}: ${restaurant.description} 
+
+Would you like me to search for more specific information about this restaurant or help you with something else?`,
+        timestamp: new Date(),
+        followUpQuestions: [
+          `How's the food quality at ${restaurant.name}?`,
+          `What's the atmosphere like at ${restaurant.name}?`,
+          `Is ${restaurant.name} good value for money?`,
+          `What are the popular dishes at ${restaurant.name}?`
+        ],
+      }
+
+      setMessages((prev) => {
+        const withoutThinking = prev.slice(0, -1)
+        return [...withoutThinking, basicResponse]
+      })
+    }
+  }
+
+  // Handle follow-up question button clicks
+  const handleFollowUpQuestionClick = async (question: string) => {
+    // Add user message
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: "user",
+      content: question,
+      timestamp: new Date(),
+    }
+
+    setMessages((prev) => [...prev, userMessage])
+
+    // Add thinking message
+    const thinkingMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      type: "assistant",
+      content: "Let me think about that...",
+      timestamp: new Date(),
+    }
+
+    setMessages((prev) => [...prev, thinkingMessage])
+
+    // Process the question
+    const restaurantMentioned = findMentionedRestaurant(question, messages)
+    
+    if (restaurantMentioned) {
+      await handleRestaurantFollowUp(question, restaurantMentioned)
     } else {
-      // This is a new search
-      await getRecommendations(currentMessage, selectedLocation || undefined)
+      // Handle as general question about all current restaurants
+      await handleGeneralFollowUpQuestion(question)
+    }
+  }
+
+  // Generate contextual follow-up questions based on search query and results
+  const generateContextualFollowUpQuestions = (query: string, restaurants: Restaurant[]): string[] => {
+    const lowerQuery = query.toLowerCase()
+    const questions: string[] = []
+
+    // Base questions everyone gets
+    questions.push("Compare the top 2 restaurants")
+    questions.push("Which is most family-friendly?")
+
+    // Query-specific questions
+    if (lowerQuery.includes("biryani") || lowerQuery.includes("indian")) {
+      questions.push("Which has the most authentic biryani?")
+      questions.push("Which place has the best spice levels?")
+    } else if (lowerQuery.includes("pizza") || lowerQuery.includes("italian")) {
+      questions.push("Which has the best pizza?")
+      questions.push("Which is good for a casual dinner?")
+    } else if (lowerQuery.includes("sushi") || lowerQuery.includes("japanese")) {
+      questions.push("Which has the freshest sushi?")
+      questions.push("Which is best for a date night?")
+    } else if (lowerQuery.includes("burger") || lowerQuery.includes("american")) {
+      questions.push("Which has the best burgers?")
+      questions.push("Which is most kid-friendly?")
+    } else {
+      questions.push(`Which has the best ${query.toLowerCase()}?`)
+      questions.push("Which restaurant would you recommend?")
+    }
+
+    // Price-based questions
+    questions.push("Show me cheaper options")
+    questions.push("Which offers the best value?")
+
+    // Occasion-based questions
+    questions.push("Which is best for a date?")
+    
+    return questions.slice(0, 6) // Return top 6 questions
+  }
+
+  // Handle general follow-up questions about all restaurants
+  const handleGeneralFollowUpQuestion = async (question: string) => {
+    try {
+      // Use AI to answer general questions about the restaurant set
+      const response = await fetch('/api/restaurant-intelligence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          restaurants: recommendations, // Use all current recommendations
+          specificQuestion: question,
+          searchContext: initialQuery,
+          userLocation: selectedLocation?.address || selectedLocation?.city,
+          isGeneralQuestion: true,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        
+        const intelligentAnswer: ChatMessage = {
+          id: (Date.now() + 2).toString(),
+          type: "assistant",
+          content: data.intelligence.insights,
+          timestamp: new Date(),
+          followUpQuestions: data.intelligence.followUpQuestions || [],
+        }
+
+        setMessages((prev) => {
+          const withoutThinking = prev.slice(0, -1)
+          return [...withoutThinking, intelligentAnswer]
+        })
+      } else {
+        throw new Error('Failed to get intelligent response')
+      }
+    } catch (error) {
+      // Fallback response
+      const fallbackAnswer: ChatMessage = {
+        id: (Date.now() + 2).toString(),
+        type: "assistant",
+        content: `That's a great question about "${question}". Let me search for more specific information to give you a better answer.`,
+        timestamp: new Date(),
+        followUpQuestions: [
+          "Tell me more about the top-rated restaurant",
+          "Which has the best reviews?",
+          "Show me detailed comparisons",
+          "Find restaurants with similar cuisine"
+        ],
+      }
+
+      setMessages((prev) => {
+        const withoutThinking = prev.slice(0, -1)
+        return [...withoutThinking, fallbackAnswer]
+      })
     }
   }
 
@@ -132,7 +435,7 @@ export default function SearchPage() {
     }
   }
 
-  const handleRestaurantClick = (restaurant: Restaurant) => {
+  const handleRestaurantClick = async (restaurant: Restaurant) => {
     // Add a message showing interest in this restaurant
     const interestMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -141,14 +444,92 @@ export default function SearchPage() {
       timestamp: new Date(),
     }
 
-    const responseMessage: ChatMessage = {
+    setMessages((prev) => [...prev, interestMessage])
+
+    // Add a loading message while researching
+    const loadingMessage: ChatMessage = {
       id: (Date.now() + 1).toString(),
       type: "assistant",
-      content: `${restaurant.name} is a great choice! ${restaurant.description} It has a ${restaurant.rating} star rating and is ${restaurant.distance} away. ${restaurant.whyRecommended}`,
+      content: `Let me research ${restaurant.name} for you and gather some detailed insights...`,
       timestamp: new Date(),
     }
 
-    setMessages((prev) => [...prev, interestMessage, responseMessage])
+    setMessages((prev) => [...prev, loadingMessage])
+
+    try {
+      // Call the restaurant intelligence API
+      const response = await fetch('/api/restaurant-intelligence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          restaurant,
+          searchContext: initialQuery,
+          userLocation: selectedLocation?.address || selectedLocation?.city,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const intelligence = data.intelligence
+
+        // Replace loading message with intelligent analysis (including follow-up questions)
+        const intelligentResponse: ChatMessage = {
+          id: (Date.now() + 2).toString(),
+          type: "assistant", 
+          content: intelligence.insights,
+          timestamp: new Date(),
+          followUpQuestions: intelligence.followUpQuestions || [],
+          isProactive: true,
+        }
+
+        setMessages((prev) => {
+          // Remove the loading message and add the intelligent response
+          const withoutLoading = prev.slice(0, -1)
+          return [...withoutLoading, intelligentResponse]
+        })
+
+      } else {
+        // Fallback if API fails
+        const fallbackResponse: ChatMessage = {
+          id: (Date.now() + 2).toString(),
+          type: "assistant",
+          content: `${restaurant.name} is a ${restaurant.cuisine} restaurant with a ${restaurant.rating} star rating. ${restaurant.description} It's ${restaurant.distance} from you.
+
+What would you like to know more about?
+• Food quality and menu highlights
+• Atmosphere and dining experience  
+• Pricing and value for money
+• Best dishes to order
+• Reservation requirements`,
+          timestamp: new Date(),
+        }
+
+        setMessages((prev) => {
+          const withoutLoading = prev.slice(0, -1)
+          return [...withoutLoading, fallbackResponse]
+        })
+      }
+
+    } catch (error) {
+      console.error('Failed to get restaurant intelligence:', error)
+      
+      // Fallback response on error
+      const errorResponse: ChatMessage = {
+        id: (Date.now() + 2).toString(),
+        type: "assistant",
+        content: `I'm having trouble getting detailed information about ${restaurant.name} right now, but I can tell you that it's a ${restaurant.cuisine} restaurant with a ${restaurant.rating} star rating, located ${restaurant.distance} from you.
+
+What specific aspects would you like to know about? I can help with questions about the food, atmosphere, pricing, or anything else!`,
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => {
+        const withoutLoading = prev.slice(0, -1)
+        return [...withoutLoading, errorResponse]
+      })
+    }
   }
 
   return (
@@ -230,11 +611,16 @@ export default function SearchPage() {
                       {message.restaurants.map((restaurant) => (
                         <Card
                           key={restaurant.id}
-                          className="p-4 hover:bg-muted/50 cursor-pointer transition-colors"
+                          className="p-4 hover:bg-muted/50 cursor-pointer transition-all border-l-4 border-l-primary/20 hover:border-l-primary/60 hover:shadow-md"
                           onClick={() => handleRestaurantClick(restaurant)}
                         >
                           <div className="flex justify-between items-start mb-2">
-                            <h3 className="font-semibold text-foreground">{restaurant.name}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-foreground">{restaurant.name}</h3>
+                              <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded-full">
+                                Click for details
+                              </span>
+                            </div>
                             <div className="flex items-center gap-1 text-sm text-muted-foreground">
                               <span className="text-primary font-medium">{restaurant.rating}</span>
                               <span>★</span>
@@ -255,8 +641,41 @@ export default function SearchPage() {
                           {restaurant.whyRecommended && (
                             <p className="text-xs text-primary mt-2 font-medium">{restaurant.whyRecommended}</p>
                           )}
+                          <div className="mt-3 pt-2 border-t border-border/20">
+                            <p className="text-xs text-muted-foreground italic">
+                              💡 I can tell you about the food quality, atmosphere, pricing, and more!
+                            </p>
+                          </div>
                         </Card>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Follow-up Questions */}
+                  {message.followUpQuestions && message.followUpQuestions.length > 0 && (
+                    <div className="mt-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <MessageSquare className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-medium text-primary">Quick questions:</span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-1">
+                        {message.followUpQuestions.slice(0, 4).map((question, index) => (
+                          <Button
+                            key={index}
+                            variant="outline"
+                            className="justify-start h-auto p-3 text-left hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-sm"
+                            onClick={() => handleFollowUpQuestionClick(question)}
+                          >
+                            <MessageSquare className="w-3 h-3 mr-2 flex-shrink-0" />
+                            <span className="text-left">{question}</span>
+                          </Button>
+                        ))}
+                      </div>
+                      {message.followUpQuestions.length > 4 && (
+                        <p className="text-xs text-muted-foreground mt-2 text-center">
+                          +{message.followUpQuestions.length - 4} more questions - just ask me anything!
+                        </p>
+                      )}
                     </div>
                   )}
 
