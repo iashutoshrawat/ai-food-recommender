@@ -1,8 +1,9 @@
 import { TomTomService } from "@/lib/tomtom-service"
+import { NextRequest } from "next/server"
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url)
+    const { searchParams } = req.nextUrl
     const lat = Number.parseFloat(searchParams.get("lat") || "0")
     const lng = Number.parseFloat(searchParams.get("lng") || "0")
 

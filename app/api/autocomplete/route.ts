@@ -1,9 +1,10 @@
 import { TomTomService } from "@/lib/tomtom-service"
 import type { LocationData } from "@/hooks/use-location"
+import { NextRequest } from "next/server"
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url)
+    const { searchParams } = req.nextUrl
     const query = searchParams.get("q")
     const limit = parseInt(searchParams.get("limit") || "5")
 

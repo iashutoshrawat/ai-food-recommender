@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
 
 // GET endpoint for retrieving analytics data (for admin dashboard)
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
+  const { searchParams } = req.nextUrl
   const sessionId = searchParams.get("sessionId")
   const eventType = searchParams.get("eventType")
   const timeRange = searchParams.get("timeRange") // e.g., "24h", "7d", "30d"
