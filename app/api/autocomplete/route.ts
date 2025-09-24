@@ -2,6 +2,9 @@ import { TomTomService } from "@/lib/tomtom-service"
 import type { LocationData } from "@/hooks/use-location"
 import { NextRequest } from "next/server"
 
+// Force this route to be dynamic since it uses search parameters
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl

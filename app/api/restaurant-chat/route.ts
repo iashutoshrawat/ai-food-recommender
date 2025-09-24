@@ -5,6 +5,9 @@ import { z } from "zod"
 import type { Restaurant } from "@/hooks/use-ai-recommendations"
 import type { ConversationMessage } from "@/hooks/use-restaurant-chat"
 
+// Force this route to be dynamic since it uses environment variables
+export const dynamic = 'force-dynamic'
+
 const ChatRequestSchema = z.object({
   message: z.string(),
   conversationHistory: z.array(z.any()).optional(),

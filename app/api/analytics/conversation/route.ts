@@ -68,6 +68,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// Force this route to be dynamic since it uses search parameters
+export const dynamic = 'force-dynamic'
+
 // GET endpoint for retrieving analytics data (for admin dashboard)
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
